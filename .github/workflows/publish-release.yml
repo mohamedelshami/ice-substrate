@@ -1,0 +1,87 @@
+name: Publish Release
+
+# - Checkout the selected branch
+# - Build WASM using Substrate Runtime Tool
+# - Use subwasm to obtain build data
+# - Generate release note
+# - Create release issue
+# - Archive the build artifacts to Github 
+# - Publish the WASM to Pinata via ipfs
+
+env:
+  SUBWASM_VERSION: 0.17.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Get name of the chain
+      chain:
+        description: Chain Runtime (default = karura)    
+        required: true
+        default: snow
+        type: choice
+        options:
+          - snow
+          - arctic
+      # Get the scope of release note
+      scope:
+        description: Release scope (default = full)
+        required: true
+        default: full
+        type: choice
+        options:
+          - client
+          - runtime
+          - full
+      # Get the SR Tool image used to build
+      srtool_image:
+        description: Default to use the latest. You can use an alternate image, use with caution!
+        required: false
+
+jobs:
+  build-release:
+    name: Build and publish ${{ github.event.inputs.chain }}
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the codebase
+      - name: Checkout Codebase
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      # Build WASM with Substrate Runtime Tool
+      - name: Srtool build
+        id: srtool_build
+        uses: chevdor/srtool-actions@v0.4.0
+        env:
+          BUILD_OPTS: "--features on-chain-release-build"
+        with:
+          chain: ${{ github.event.inputs.chain }}
+          tag: ${{ github.event.inputs.srtool_image }}
+
+      # Output the build summary
+      - name: Build Summary
+        run: |
+          echo '${{ steps.srtool_build.outputs.json }}' | jq . > ${{ github.event.inputs.chain }}-srtool-digest.json
+          cat ${{ github.event.inputs.chain }}-srtool-digest.json
+          echo "Runtime location: ${{ steps.srtool_build.outputs.wasm }}"
+      # install subwasm
+      - name: Install subwasm ${{ env.SUBWASM_VERSION }}
+        run: |
+          wget https://github.com/chevdor/subwasm/releases/download/v${{ env.SUBWASM_VERSION }}/subwasm_linux_amd64_v${{ env.SUBWASM_VERSION }}.deb
+          sudo dpkg -i subwasm_linux_amd64_v${{ env.SUBWASM_VERSION }}.deb
+          subwasm --version
+      # Display information for wasm
+      - name: Extract metadata
+        run: |
+          subwasm  --json info ${{ steps.srtool_build.outputs.wasm }} > ${{ github.event.inputs.chain }}-info.json
+          subwasm info ${{ steps.srtool_build.outputs.wasm }} > ${{ github.event.inputs.chain }}-info.txt
+          cat ${{ github.event.inputs.chain }}-info.txt
+          subwasm  --json info ${{ steps.srtool_build.outputs.wasm_compressed }} > ${{ github.event.inputs.chain }}-subwam-info.json
+          subwasm info ${{ steps.srtool_build.outputs.wasm_compressed }} > ${{ github.event.inputs.chain }}-subwam-info.txt
+          cat ${{ github.event.inputs.chain }}-subwam-info.txt
+      # Diff new wasm with current
+      - name: Check the metadata diff
+        run: |
+          subwasm diff ${{ steps.srtool_build.outputs.wasm }} --chain-b ${{ github.event.inputs.chain }} | tee ${{ github.event.inputs.chain }}-diff.txt
+   
