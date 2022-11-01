@@ -1,37 +1,27 @@
 name: Release
 on:
    workflow_dispatch:
-     inputs:
-      srtool_tag:
-        description: The SRTOOL tag to use
-        default: 1.60.0
-        required: true
-      release-version:
-        description: 'Release version tag'
-        required: true
-      ref:
-        description: The ref to be used for the repo
-        default: main
-        required: true
+
 jobs:
   build-runtime:
     runs-on: ubuntu-latest
     env:
-      SUBWASM_VERSION: 0.17.0
+      SUBWASM_VERSION: 0.18.0
     strategy:
       matrix:
-        chain: ["snow"]
+        chain: ["arctic", "snow"]
+        endpoint: ["arctic-rpc.icenetwork.io:9933", "snow-rpc.icenetwork.io:9933"]
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
       - name: Srtool build
         id: srtool_build
-        uses: chevdor/srtool-actions@v0.4.0
+        uses: chevdor/srtool-actions@v0.6.0
         with:
           chain: ${{ matrix.chain }}
-          tag: ${{ github.event.inputs.srtool_tag || env.SRTOOL_TAG }}
 
       - name: Summary
         shell: bash
@@ -40,20 +30,23 @@ jobs:
           cat ${{ matrix.chain }}-srtool-digest.json
           echo "Compact Runtime: ${{ steps.srtool_build.outputs.wasm }}"
           echo "Compressed Runtime: ${{ steps.srtool_build.outputs.wasm_compressed }}"
+
       - name: Archive Artifacts for ${{ matrix.chain }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.chain }}-runtime
           path: |
             ${{ steps.srtool_build.outputs.wasm }}
             ${{ steps.srtool_build.outputs.wasm_compressed }}
             ${{ matrix.chain }}-srtool-digest.json
+
       - name: Install subwasm
         shell: bash
         run: |
           wget https://github.com/chevdor/subwasm/releases/download/v${{ env.SUBWASM_VERSION }}/subwasm_linux_amd64_v${{ env.SUBWASM_VERSION }}.deb
           sudo dpkg -i subwasm_linux_amd64_v${{ env.SUBWASM_VERSION }}.deb
           subwasm --version
+
       - name: Show Runtime information
         shell: bash
         run: |
@@ -61,19 +54,22 @@ jobs:
           subwasm info ${{ steps.srtool_build.outputs.wasm_compressed }}
           subwasm --json info ${{ steps.srtool_build.outputs.wasm }} > ${{ matrix.chain }}-info.json
           subwasm --json info ${{ steps.srtool_build.outputs.wasm_compressed }} > ${{ matrix.chain }}-compressed-info.json
+
       - name: Extract the metadata
         shell: bash
         run: |
           subwasm meta ${{ steps.srtool_build.outputs.wasm }}
           subwasm --json meta ${{ steps.srtool_build.outputs.wasm }} > ${{ matrix.chain }}-metadata.json
+
       - name: Check the metadata diff
         shell: bash
         run: |
-          subwasm get wss://arctic-rpc.icenetwork.io:9944 --output arctic-live.wasm
-          subwasm diff ${{ steps.srtool_build.outputs.wasm }} arctic-live.wasm | \
+          subwasm get https://${{ matrix.endpoint }} --output ${{ matrix.chain }}-live.wasm
+          subwasm diff ${{ steps.srtool_build.outputs.wasm }} ${{ matrix.chain }}-live.wasm | \
             tee ${{ matrix.chain }}-diff.txt
+
       - name: Archive Subwasm results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.chain }}-runtime
           path: |
@@ -81,26 +77,28 @@ jobs:
             ${{ matrix.chain }}-compressed-info.json
             ${{ matrix.chain }}-metadata.json
             ${{ matrix.chain }}-diff.txt
+
   build-binary:
     name: Build binary
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout the source code
       uses: actions/checkout@v3
       with:
         submodules: true
+
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2022-01-16
+        profile: minimal
+        toolchain: nightly-2022-10-27
         target: x86_64-unknown-linux-gnu
         components: rustfmt, clippy
         default: true
 
     - name: Install WASM target (for runtime building)
       shell: bash
-      run: rustup target add wasm32-unknown-unknown --toolchain nightly-2022-01-16
-
+      run: rustup target add wasm32-unknown-unknown --toolchain nightly-2022-10-27
     - name: Build optimized binary
       uses: actions-rs/cargo@v1
       with:
@@ -112,14 +110,13 @@ jobs:
       with:
         name: x86_64-unknown-linux-gnu
         path: target/x86_64-unknown-linux-gnu/release/ice-node
-
+  
   release:
     name: Release
     needs:
     - build-binary
     - build-runtime
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout the source code
       uses: actions/checkout@v3
@@ -128,12 +125,16 @@ jobs:
       run: |
         mkdir -p release/tmp/
         cd release/tmp/
-        mkdir  snow x86_64
+        mkdir arctic snow runtimes x86_64
     - name: get x86_64 binary
       uses: actions/download-artifact@v2
       with:
         name: x86_64-unknown-linux-gnu
         path: release/tmp/x86_64/
+    - uses: actions/download-artifact@v2
+      with:
+        name: arctic-runtime
+        path: release/tmp/arctic/
     - uses: actions/download-artifact@v2
       with:
         name: snow-runtime
@@ -142,16 +143,17 @@ jobs:
       shell: bash
       run: |
         cd release/
-        echo "::set-output name=snow::$(jq -r '.core_version' tmp/snow/snow-info.json | awk '{print $1}')"
         chmod +x tmp/x86_64/ice-node
         tar -czvf ice-node.tar.gz -C tmp/x86_64/ ice-node
-        cd tmp/snow;tar -czvf ../../runtime-"$(jq -r '.core_version' snow-info.json | awk '{print $1}')".tar.gz *;cd ../../
+        cp -R tmp/arctic tmp/runtimes/
+        cp -R tmp/snow tmp/runtimes/
+        cd tmp/runtimes;tar -czvf ../../runtimes.tar.gz *;cd ../../
         sha256sum *.tar.gz > sha256sum
         rm -rf tmp/
 
     - name: Upload assets to release
       uses: softprops/action-gh-release@v1
       with:
-        name: Snow ${{ github.event.inputs.release-version }}
+        name: runtimes ${{ github.event.inputs.release-version }}
         files: ./release/*
         draft: true

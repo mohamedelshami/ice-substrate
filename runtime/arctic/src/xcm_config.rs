@@ -1,12 +1,17 @@
 use super::{
-	AccountId, Assets, Balance, Balances, Call, DealWithFees, Event, Origin, ParachainInfo,
-	ParachainSystem, PolkadotXcm, Runtime, WeightToFee, XcmpQueue,
+	AccountId, Assets, Balance, Balances, Call, Currencies, CurrencyId, Event, Origin,
+	ParachainInfo, ParachainSystem, PolkadotXcm, RelativeCurrencyIdConvert, Runtime, Tokens,
+	Treasury, UnknownTokens, XcmpQueue,
 };
+use crate::constants::fee::ksm_per_second;
+use crate::TokenSymbol::*;
+use codec::Encode;
 use frame_support::{
 	match_types, parameter_types,
 	traits::{Everything, Nothing, PalletInfoAccess},
 	weights::Weight,
 };
+use orml_traits::{BasicCurrency, MultiCurrency};
 use pallet_xcm::XcmPassthrough;
 use polkadot_parachain::primitives::Sibling;
 use xcm::latest::prelude::*;
@@ -16,13 +21,17 @@ use xcm_builder::{
 	ConvertedConcreteAssetId, CurrencyAdapter, EnsureXcmOrigin, FixedRateOfFungible,
 	FixedWeightBounds, FungiblesAdapter, IsConcrete, LocationInverter, ParentAsSuperuser,
 	ParentIsPreset, RelayChainAsNative, SiblingParachainAsNative, SiblingParachainConvertsVia,
-	SignedAccountId32AsNative, SignedToAccountId32, SovereignSignedViaLocation, TakeWeightCredit,
-	UsingComponents,
+	SignedAccountId32AsNative, SignedToAccountId32, SovereignSignedViaLocation, TakeRevenue,
+	TakeWeightCredit,
 };
 use xcm_executor::{
 	traits::{FilterAssetLocation, JustTry},
 	XcmExecutor,
 };
+
+use crate::{AdaptedBasicCurrency, NativeCurrencyId};
+use orml_xcm_support::{IsNativeConcrete, MultiCurrencyAdapter};
+use sp_runtime::traits::Convert;
 
 parameter_types! {
 	pub const RelayLocation: MultiLocation = MultiLocation::parent();
@@ -62,6 +71,17 @@ pub type CurrencyTransactor = CurrencyAdapter<
 	(),
 >;
 
+pub type LocalAssetTransactor = MultiCurrencyAdapter<
+	Currencies,
+	UnknownTokens,
+	IsNativeConcrete<CurrencyId, RelativeCurrencyIdConvert>,
+	AccountId,
+	LocationToAccountId,
+	CurrencyId,
+	RelativeCurrencyIdConvert,
+	(),
+>;
+
 /// Means for transacting assets besides the native currency on this chain.
 pub type FungiblesTransactor = FungiblesAdapter<
 	// Use this fungibles implementation:
@@ -80,7 +100,7 @@ pub type FungiblesTransactor = FungiblesAdapter<
 	// Our chain's account ID type (we can't get away without mentioning it explicitly):
 	AccountId,
 	// We don't track any teleports of `Assets`.
-	Nothing,
+	Everything,
 	// We don't track any teleports of `Assets`.
 	CheckingAccount,
 >;
@@ -113,11 +133,16 @@ pub type XcmOriginToTransactDispatchOrigin = (
 );
 
 parameter_types! {
-	// One XCM operation is 1_000_000_000 weight - almost certainly a conservative estimate.
-	pub UnitWeightCost: Weight = 1_000_000_000;
+	pub UnitWeightCost: Weight = 200_000_000;
 	pub const MaxInstructions: u32 = 100;
-	// TODO: figure correct weight conversion
-	pub UnitPerSecond: (xcm::v1::AssetId, u128) = (MultiLocation::parent().into(), 1_000_000_000);
+	pub KsmPerSecond: (AssetId, u128) = (MultiLocation::parent().into(), ksm_per_second());
+	pub IczPerSecond: (AssetId, u128) = (
+		MultiLocation::new(
+			0,
+			X1(GeneralKey(ICZ.encode())),
+		).into(),
+		0
+	);
 }
 
 match_types! {
@@ -153,22 +178,48 @@ impl FilterAssetLocation for ReserveAssetFilter {
 	}
 }
 
+pub struct ToTreasury;
+impl TakeRevenue for ToTreasury {
+	fn take_revenue(revenue: MultiAsset) {
+		if let MultiAsset {
+			id: Concrete(location),
+			fun: Fungible(amount),
+		} = revenue
+		{
+			if amount == 0 {
+				return;
+			}
+
+			if let Some(currency_id) = RelativeCurrencyIdConvert::convert(location) {
+				let treasury = &Treasury::account_id();
+				if currency_id == NativeCurrencyId::get() {
+					let _ = AdaptedBasicCurrency::deposit(treasury, amount);
+				} else {
+					let _ = Tokens::deposit(currency_id, treasury, amount);
+				}
+			}
+		}
+	}
+}
+
+pub type Trader = (
+	FixedRateOfFungible<KsmPerSecond, ToTreasury>,
+	FixedRateOfFungible<IczPerSecond, ToTreasury>,
+);
+
 pub struct XcmConfig;
 impl xcm_executor::Config for XcmConfig {
 	type Call = Call;
 	type XcmSender = XcmRouter;
 	// How to withdraw and deposit an asset.
-	type AssetTransactor = AssetTransactors;
+	type AssetTransactor = LocalAssetTransactor; // AssetTransactors;
 	type OriginConverter = XcmOriginToTransactDispatchOrigin;
-	type IsReserve = (); // ReserveAssetFilter; //NativeAsset;
+	type IsReserve = ReserveAssetFilter; // ReserveAssetFilter; //NativeAsset;
 	type IsTeleporter = (); // Teleporting is disabled.
 	type LocationInverter = LocationInverter<Ancestry>;
 	type Barrier = XcmBarrier;
 	type Weigher = FixedWeightBounds<UnitWeightCost, Call, MaxInstructions>;
-	type Trader = (
-		FixedRateOfFungible<UnitPerSecond, ()>,
-		UsingComponents<WeightToFee, RelayLocation, AccountId, Balances, DealWithFees>,
-	);
+	type Trader = Trader;
 	type ResponseHandler = PolkadotXcm;
 	type AssetTrap = PolkadotXcm;
 	type AssetClaims = PolkadotXcm;
