@@ -1,7 +1,11 @@
 name: Release
 on:
    workflow_dispatch:
-
+    inputs:
+      tag:
+       description: 'Release version (e.g. v0.1.0)'
+       required: true
+       
 jobs:
   build-runtime:
     runs-on: ubuntu-latest
@@ -10,7 +14,6 @@ jobs:
     strategy:
       matrix:
         chain: ["arctic", "snow"]
-        endpoint: ["arctic-rpc.icenetwork.io:9933", "snow-rpc.icenetwork.io:9933"]
 
     steps:
       - uses: actions/checkout@v3
@@ -64,7 +67,7 @@ jobs:
       - name: Check the metadata diff
         shell: bash
         run: |
-          subwasm get https://${{ matrix.endpoint }} --output ${{ matrix.chain }}-live.wasm
+          subwasm get https://${{ matrix.chain }}-rpc.icenetwork.io:9933 --output ${{ matrix.chain }}-live.wasm
           subwasm diff ${{ steps.srtool_build.outputs.wasm }} ${{ matrix.chain }}-live.wasm | \
             tee ${{ matrix.chain }}-diff.txt
 
@@ -139,6 +142,7 @@ jobs:
       with:
         name: snow-runtime
         path: release/tmp/snow/
+
     - id: compress_artifacts
       shell: bash
       run: |
