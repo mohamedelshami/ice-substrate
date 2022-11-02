@@ -105,26 +105,43 @@ jobs:
 
   release:
     name: Build and publish Runtime
+    
     needs:
       - build_binary
       - build_runtime
 
-    runs-on: ubuntu-latest
     steps:
-      # Checkout the codebase
-      - name: Checkout Codebase
-        uses: actions/checkout@v3
+    
+      - name: Create Tag
+        uses: laputansoft/github-tag-action@v4.6
         with:
-          submodules: true
+          tag: ${{ github.event.inputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Generate template data
+        run: |
+            TAG=${{ github.event.inputs.tag }}
+            SRTOOL_DETAILS=$(cat gm-srtool-digest.json)
+            SUBWASM_DETAILS=$(cat gm-subwam-info.json)
+            echo 'Template data:'
+            jq -n \
+              --arg tag "$TAG" \
+              --arg srtool_details "$SRTOOL_DETAILS" \
+              --arg subwasm_details "$SUBWASM_DETAILS" \
+              '{
+                tag: $tag,
+                srtool_details: $srtool_details,
+                subwasm_details: $subwasm_details
+              }' | tee template_data.json
 
       - name: Publish github release
-          uses: softprops/action-gh-release@v1
-          with:
-            files: |
-              ice-node
-              ${{ steps.srtool_build.outputs.wasm }}
-              ${{ steps.srtool_build.outputs.wasm_compressed }}
-            body_path: ".github/release-template.md"
-            tag_name: ${{ github.event.inputs.tag }}
-            name: "${{ github.event.inputs.tag }}
-            token: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ice-node
+            ${{ steps.srtool_build.outputs.wasm }}
+            ${{ steps.srtool_build.outputs.wasm_compressed }}
+          body_path: ".github/release-template.md"
+          tag_name: ${{ github.event.inputs.tag }}
+          name: "${{ github.event.inputs.tag }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
