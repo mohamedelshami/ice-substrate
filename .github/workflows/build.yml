@@ -34,4 +34,4 @@ jobs:
           toolchain: stable
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build
