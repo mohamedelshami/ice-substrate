@@ -13,8 +13,3 @@ jobs:
     steps:
       - name: Checkout
       - uses: actions/checkout@v3
- 
-      - name: Save/Restore Dependencies from Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{env.RUST_TOOLCHAIN}}
