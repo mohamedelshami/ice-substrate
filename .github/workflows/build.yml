@@ -18,17 +18,3 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{env.RUST_TOOLCHAIN}}
-     
-      - name: Cache Binary
-        uses: actions/cache@v3
-        with:
-          path: target/${{env.BUILD_PROFILE}}/ice
-          key: ${{runner.os}}-${{env.RUST_TOOLCHAIN}}-${{github.sha}}
-          
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          default: true
-          profile: minimal
-          target: wasm32-unknown-unknown
-          toolchain: stable
