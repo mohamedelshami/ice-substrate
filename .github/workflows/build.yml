@@ -3,10 +3,6 @@ name: Build
 on:  
   workflow_dispatch:
 
-env:  
-  BUILD_PROFILE: debug
-  RUST_TOOLCHAIN: nightly-2022-10-25
-
 jobs:
   build:
     runs-on: ubuntu-latest
