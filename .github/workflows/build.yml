@@ -17,11 +17,20 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{env.RUST_TOOLCHAIN}}
-      - name: Cache Frequency Binary
+          
+      - name: Cache Binary
         uses: actions/cache@v3
         with:
           path: target/${{env.BUILD_PROFILE}}/ice
           key: ${{runner.os}}-${{env.RUST_TOOLCHAIN}}-${{github.sha}}
+          
+      - name: Install nightly toolchain for rustfmt
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -29,6 +38,7 @@ jobs:
           profile: minimal
           target: wasm32-unknown-unknown
           toolchain: stable
-      - name: Compile for Mainnet
+          
+      - name: Build
         run: |
           CARGO_INCREMENTAL=0 RUSTFLAGS="-D warnings" cargo build
