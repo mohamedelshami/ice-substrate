@@ -1,36 +1,37 @@
-name: Checks & Build
+name: CI Build
 
 on:  
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
+env:  
+  BUILD_PROFILE: debug
+  RUST_TOOLCHAIN: nightly-2022-10-25
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
       - uses: actions/checkout@v3
+ 
+      - name: Save/Restore Dependencies from Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{env.RUST_TOOLCHAIN}}
      
-      - name: Install minimal stable Rust
+      - name: Cache Binary
+        uses: actions/cache@v3
+        with:
+          path: target/${{env.BUILD_PROFILE}}/ice
+          key: ${{runner.os}}-${{env.RUST_TOOLCHAIN}}-${{github.sha}}
+          
+      - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Install minimal nightly Rust
-        uses: actions-rs/toolchain@v1
-        with:
+          default: true
           profile: minimal
           target: wasm32-unknown-unknown
-          
-      - name: Initialize WASM build environment
-        run: |
-            rustup update stable
-            rustup toolchain install nightly-2022-10-10
-            rustup default nightly-2022-10-10
-            rustup target add wasm32-unknown-unknown --toolchain nightly-2022-10-10    
+          toolchain: stable
 
       - name: Build
         run: cargo build --verbose
