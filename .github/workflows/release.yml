@@ -88,13 +88,22 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: true
-
-      - uses: actions-rs/toolchain@v1
+      
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-10-27
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           target: wasm32-unknown-unknown
+          override: true
+          
+      - name: Install Rust Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
           default: true
+          profile: minimal
+          target: wasm32-unknown-unknown
+          toolchain: stable
 
       - name: Build binary
         run: cargo build
@@ -124,8 +133,8 @@ jobs:
       - name: Generate template data
         run: |
             TAG=${{ github.event.inputs.tag }}
-            SRTOOL_DETAILS=$(cat gm-srtool-digest.json)
-            SUBWASM_DETAILS=$(cat gm-subwam-info.json)
+            SRTOOL_DETAILS=$(cat arctic-srtool-digest.json)
+            SUBWASM_DETAILS=$(cat arctic-subwam-info.json)
             echo 'Template data:'
             jq -n \
               --arg tag "$TAG" \
