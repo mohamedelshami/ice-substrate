@@ -5,7 +5,7 @@ on:
   
 env:
   BUILD_PROFILE: debug
-  RUST_TOOLCHAIN: nightly
+  RUST_TOOLCHAIN: nightly-2022-10-25
   RUST_BACKTRACE: full
   RUSTC_WRAPPER: sccache
   
@@ -54,6 +54,5 @@ jobs:
           restore-keys: sccache-${{ matrix.action }}-${{ env.GITHUB_CACHE_VERSION }}-
       
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
+        run: |
+          CARGO_INCREMENTAL=0 RUSTFLAGS="-D warnings" cargo build
