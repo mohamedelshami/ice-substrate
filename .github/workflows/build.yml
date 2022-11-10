@@ -23,6 +23,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+          target: wasm32-unknown-unknown
           default: true
           
       - name: Install Sccache
