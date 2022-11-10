@@ -6,8 +6,6 @@ on:
 env:
   BUILD_PROFILE: debug
   RUST_TOOLCHAIN: nightly-2022-10-25
-  RUST_BACKTRACE: full
-  RUSTC_WRAPPER: sccache
 
 jobs:
   build:
@@ -16,7 +14,7 @@ jobs:
       - name: Fetch latest code
         uses: actions/checkout@v3
       
-      - name: Install nightly toolchain for rustfmt
+      - name: Install nightly toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -34,4 +32,4 @@ jobs:
       
       - name: Build
         run: |
-          CARGO_INCREMENTAL=0 RUSTFLAGS="-D warnings" cargo build
+            CARGO_INCREMENTAL=0 RUSTFLAGS="-D warnings" cargo build
